@@ -180,6 +180,7 @@ def make_template(config, config_yaml):
         'RefineryData', 'AWS::EC2::Volume',
         core.Properties(volume_properties),
         core.DeletionPolicy("Snapshot"),
+        core.DependsOn("WebInstance"),
     )
 
     cft.resources.ec2_instance = core.Resource(
