@@ -166,9 +166,6 @@ def make_template(config, config_yaml):
         'Encrypted': True,
         'Size': config['DATA_VOLUME_SIZE'],
         'Tags': load_tags(),
-        'AvailabilityZone': functions.get_att(
-            'WebInstance', 'AvailabilityZone'
-        ),
         'VolumeType': config['DATA_VOLUME_TYPE'],
     }
 
@@ -193,7 +190,7 @@ def make_template(config, config_yaml):
             'SecurityGroups': [functions.ref("InstanceSecurityGroup")],
             'Tags': instance_tags,
         }),
-        core.DependsOn(['RDSInstance']),
+        core.DependsOn(['RDSInstance', 'RefineryData']),
     )
 
     cft.resources.instance_profile = core.Resource(
