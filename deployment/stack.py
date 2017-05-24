@@ -189,6 +189,8 @@ def make_template(config, config_yaml):
             'IamInstanceProfile': functions.ref('WebInstanceProfile'),
             'SecurityGroups': [functions.ref("InstanceSecurityGroup")],
             'Tags': instance_tags,
+            'Volumes': [{'Device': '/dev/xvdr',
+                        'VolumeId': functions.ref('RefineryData')}],
         }),
         core.DependsOn(['RDSInstance', 'RefineryData']),
     )
@@ -308,15 +310,6 @@ def make_template(config, config_yaml):
                     }]
                 }
             }]
-        })
-    )
-
-    cft.resources.mount = core.Resource(
-        'RefineryVolume', 'AWS::EC2::VolumeAttachment',
-        core.Properties({
-            'Device': '/dev/xvdr',
-            'InstanceId': functions.ref('WebInstance'),
-            'VolumeId': functions.ref('RefineryData'),
         })
     )
 
