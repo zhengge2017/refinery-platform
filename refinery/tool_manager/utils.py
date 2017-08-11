@@ -538,6 +538,11 @@ def validate_tool_annotation(annotation_dictionary):
         raise RuntimeError(
             "{}{}".format(ANNOTATION_ERROR_MESSAGE, e)
         )
+    except Exception as e:
+        logger.error("Something unexpected happened: %s", e)
+        raise RuntimeError(
+            "Something unexpected happened: {}".format(e)
+        )
 
 
 def validate_workflow_step_annotation(workflow_step_dictionary):
