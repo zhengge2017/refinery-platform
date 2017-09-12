@@ -1,10 +1,8 @@
 'use strict';
 
 function NodeAttributesFactory (settings, solrService) {
-  function nodeAttributes (studyUuid, assayUuid, nodeUuid, attributeList) {
+  function nodeAttributes (studyUuid, assayUuid, nodeUuid) {
     return solrService.get({
-      // Fields that are returned
-      fl: attributeList,
       // Limit search space to data sets only
       fq: [(
         '(' +

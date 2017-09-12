@@ -356,8 +356,7 @@ SolrQuery.prototype._createFieldComponent = function () {
 				fieldNames.push( field );
 			}			
 		}				
-	}	
-	url += "&fl=" + fieldNames.join( ",");
+	}
 
 	return url;
 };

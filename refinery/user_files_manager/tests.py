@@ -122,12 +122,6 @@ class UserFilesUtilsTests(TestCase):
                          'facet.field=genotype_Factor_Value_generic_s',
                          'facet.field=experimenter_Characteristics_generic_s',
                          'facet.field=experimenter_Factor_Value_generic_s',
-                         'fl=%2A_generic_s'
-                         '%2Cname'
-                         '%2C%2A_uuid'
-                         '%2Ctype'
-                         '%2Cdjango_id'
-                         '%2CREFINERY_DOWNLOAD_URL_s',
                          'fq=type%3A%28%22Raw Data File%22 '
                          'OR %22Derived Data File%22 '
                          'OR %22Array Data File%22 '
