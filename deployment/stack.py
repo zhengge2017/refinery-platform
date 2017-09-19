@@ -157,6 +157,37 @@ def _data_volume_resources(cft, config):
     )
 
 
+# TODO: Undo copy and paste from above
+def _docker_volume_resources(cft, config):
+    docker_volume_properties = {
+        'Encrypted': True,
+        'Size': config['DOCKER_VOLUME_SIZE'],
+        'Tags': load_tags(),
+        'AvailabilityZone': functions.get_att(
+            'WebInstance', 'AvailabilityZone'
+        ),
+        'VolumeType': config['DOCKER_VOLUME_TYPE'],
+    }
+
+    # For now, Docker containers are treated as ephemeral, so no snapshots.
+
+    # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-ebs-volume.html
+    cft.resources.docker_volume = core.Resource(
+        'RefineryDockerVolume', 'AWS::EC2::Volume',
+        core.Properties(docker_volume_properties),
+        core.DeletionPolicy("Snapshot"),
+    )
+
+    cft.resources.docker_volume_attachment = core.Resource(
+        'RefineryDockerVolumeAttachment', 'AWS::EC2::VolumeAttachment',
+        core.Properties({
+            'Device': '/dev/xvdr',
+            'InstanceId': functions.ref('WebInstance'),
+            'VolumeId': functions.ref('RefineryDockerVolume'),
+        })
+    )
+
+
 def make_template(config, config_yaml):
     """Make a fresh CloudFormation template object and return it"""
 
