@@ -209,6 +209,20 @@ def make_template(config, config_yaml):
         core.DeletionPolicy("Snapshot"),
         )
 
+    cft.resources.ec2_instance = core.Resource(
+        'WebInstance', 'AWS::EC2::Instance',
+        core.Properties({
+            'ImageId': 'ami-d05e75b8',
+            'InstanceType': 'm3.medium',
+            'UserData': functions.base64(user_data_script),
+            'KeyName': config['KEY_NAME'],
+            'IamInstanceProfile': functions.ref('WebInstanceProfile'),
+            'SecurityGroups': [functions.ref("InstanceSecurityGroup")],
+            'Tags': instance_tags,
+        }),
+        core.DependsOn(['RDSInstance']),
+    )
+
     data_volume_properties = {
         'Encrypted': True,
         'Size': config['DATA_VOLUME_SIZE'],
@@ -229,18 +243,13 @@ def make_template(config, config_yaml):
         core.DeletionPolicy("Snapshot"),
     )
 
-    cft.resources.ec2_instance = core.Resource(
-        'WebInstance', 'AWS::EC2::Instance',
+    cft.resources.data_volume_attachment = core.Resource(
+        'RefineryDataVolumeAttachment', 'AWS::EC2::VolumeAttachment',
         core.Properties({
-            'ImageId': 'ami-d05e75b8',
-            'InstanceType': 'm3.medium',
-            'UserData': functions.base64(user_data_script),
-            'KeyName': config['KEY_NAME'],
-            'IamInstanceProfile': functions.ref('WebInstanceProfile'),
-            'SecurityGroups': [functions.ref("InstanceSecurityGroup")],
-            'Tags': instance_tags,
-        }),
-        core.DependsOn(['RDSInstance']),
+            'Device': '/dev/xvdr',
+            'InstanceId': functions.ref('WebInstance'),
+            'VolumeId': functions.ref('RefineryDataVolume'),
+        })
     )
 
     cft.resources.instance_profile = core.Resource(
@@ -391,15 +400,6 @@ def make_template(config, config_yaml):
                     }]
                 }
             }]
-        })
-    )
-
-    cft.resources.data_volume_attachment = core.Resource(
-        'RefineryDataVolumeAttachment', 'AWS::EC2::VolumeAttachment',
-        core.Properties({
-            'Device': '/dev/xvdr',
-            'InstanceId': functions.ref('WebInstance'),
-            'VolumeId': functions.ref('RefineryDataVolume'),
         })
     )
 
