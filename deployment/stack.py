@@ -126,6 +126,37 @@ def _add_parameters(cft):
     )
 
 
+def _data_volume_resources(cft, config):
+    data_volume_properties = {
+        'Encrypted': True,
+        'Size': config['DATA_VOLUME_SIZE'],
+        'Tags': load_tags(),
+        'AvailabilityZone': functions.get_att(
+            'WebInstance', 'AvailabilityZone'
+        ),
+        'VolumeType': config['DATA_VOLUME_TYPE'],
+    }
+
+    if 'DATA_SNAPSHOT' in config:
+        data_volume_properties['SnapshotId'] = config['DATA_SNAPSHOT']
+
+    # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-ebs-volume.html
+    cft.resources.data_volume = core.Resource(
+        'RefineryDataVolume', 'AWS::EC2::Volume',
+        core.Properties(data_volume_properties),
+        core.DeletionPolicy("Snapshot"),
+    )
+
+    cft.resources.data_volume_attachment = core.Resource(
+        'RefineryDataVolumeAttachment', 'AWS::EC2::VolumeAttachment',
+        core.Properties({
+            'Device': '/dev/xvdr',
+            'InstanceId': functions.ref('WebInstance'),
+            'VolumeId': functions.ref('RefineryDataVolume'),
+        })
+    )
+
+
 def make_template(config, config_yaml):
     """Make a fresh CloudFormation template object and return it"""
 
@@ -237,34 +268,7 @@ def make_template(config, config_yaml):
         core.DependsOn(['RDSInstance']),
     )
 
-    data_volume_properties = {
-        'Encrypted': True,
-        'Size': config['DATA_VOLUME_SIZE'],
-        'Tags': load_tags(),
-        'AvailabilityZone': functions.get_att(
-            'WebInstance', 'AvailabilityZone'
-        ),
-        'VolumeType': config['DATA_VOLUME_TYPE'],
-    }
-
-    if 'DATA_SNAPSHOT' in config:
-        data_volume_properties['SnapshotId'] = config['DATA_SNAPSHOT']
-
-    # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-ebs-volume.html
-    cft.resources.data_volume = core.Resource(
-        'RefineryDataVolume', 'AWS::EC2::Volume',
-        core.Properties(data_volume_properties),
-        core.DeletionPolicy("Snapshot"),
-    )
-
-    cft.resources.data_volume_attachment = core.Resource(
-        'RefineryDataVolumeAttachment', 'AWS::EC2::VolumeAttachment',
-        core.Properties({
-            'Device': '/dev/xvdr',
-            'InstanceId': functions.ref('WebInstance'),
-            'VolumeId': functions.ref('RefineryDataVolume'),
-        })
-    )
+    _data_volume_resources(cft, config)
 
     cft.resources.instance_profile = core.Resource(
         'WebInstanceProfile', 'AWS::IAM::InstanceProfile',
