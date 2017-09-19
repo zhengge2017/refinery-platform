@@ -66,6 +66,66 @@ def main():
         sys.stdout.write("{}\n".format(json.dumps(response, indent=2)))
 
 
+def _add_parameters(cft):
+    # This parameter tags the EC2 instances, and is intended to be used
+    # with the AWS Reference Implementation EBS Snapshot Scheduler:
+    # http://docs.aws.amazon.com/solutions/latest/ebs-snapshot-scheduler/welcome.html
+    cft.parameters.add(
+        core.Parameter('SnapshotSchedulerTag', 'String', {
+                'Default': 'scheduler:ebs-snapshot',
+                'Description':
+                "Tag added to EC2 Instances so that "
+                "the EBS Snapshot Scheduler will recognise them.",
+            }
+        )
+    )
+    cft.parameters.add(
+        core.Parameter(
+            'IdentityPoolName',
+            'String',
+            {
+                'Default': 'Refinery Platform',
+                'Description': 'Name of Cognito identity pool for S3 uploads',
+            }
+        )
+    )
+    cft.parameters.add(
+        core.Parameter(
+            'DeveloperProviderName',
+            'String',
+            {
+                'Default': 'login.refinery',
+                'Description': '"domain" by which Cognito will refer to users',
+                'AllowedPattern': '[a-z\-\.]+',
+                'ConstraintDescription':
+                    'must only contain lower case letters, periods, '
+                    'underscores, and hyphens'
+            }
+        )
+    )
+    cft.parameters.add(
+        core.Parameter(
+            'StorageStackName',
+            'String',
+            {
+                'Default': '${AWS::StackName}Storage',
+                'Description': 'Name of the S3 storage stack for Django '
+                               'static and media files',
+            }
+        )
+    )
+    cft.parameters.add(
+        core.Parameter('LogInterval', 'Number', {
+                'Default': 60,
+                'Description':
+                "How often, in minutes, the ELB emits its logs to the "
+                "configured S3 bucket. The ELB log facility restricts "
+                "this to be 5 or 60.",
+            }
+        )
+    )
+
+
 def make_template(config, config_yaml):
     """Make a fresh CloudFormation template object and return it"""
 
@@ -131,53 +191,7 @@ def make_template(config, config_yaml):
 
     cft = core.CloudFormationTemplate(description="Refinery Platform main")
 
-    # This parameter tags the EC2 instances, and is intended to be used
-    # with the AWS Reference Implementation EBS Snapshot Scheduler:
-    # http://docs.aws.amazon.com/solutions/latest/ebs-snapshot-scheduler/welcome.html
-    cft.parameters.add(
-        core.Parameter('SnapshotSchedulerTag', 'String', {
-                'Default': 'scheduler:ebs-snapshot',
-                'Description':
-                "Tag added to EC2 Instances so that "
-                "the EBS Snapshot Scheduler will recognise them.",
-            }
-        )
-    )
-    cft.parameters.add(
-        core.Parameter(
-            'IdentityPoolName',
-            'String',
-            {
-                'Default': 'Refinery Platform',
-                'Description': 'Name of Cognito identity pool for S3 uploads',
-            }
-        )
-    )
-    cft.parameters.add(
-        core.Parameter(
-            'DeveloperProviderName',
-            'String',
-            {
-                'Default': 'login.refinery',
-                'Description': '"domain" by which Cognito will refer to users',
-                'AllowedPattern': '[a-z\-\.]+',
-                'ConstraintDescription':
-                    'must only contain lower case letters, periods, '
-                    'underscores, and hyphens'
-            }
-        )
-    )
-    cft.parameters.add(
-        core.Parameter(
-            'StorageStackName',
-            'String',
-            {
-                'Default': '${AWS::StackName}Storage',
-                'Description': 'Name of the S3 storage stack for Django '
-                               'static and media files',
-            }
-        )
-    )
+    _add_parameters(cft)
 
     rds_properties = {
         "AllocatedStorage": "5",
@@ -548,16 +562,6 @@ def make_template(config, config_yaml):
                 functions.get_att('ELBSecurityGroup', 'GroupId')],
             'Tags': load_tags(),
         })
-    cft.parameters.add(
-        core.Parameter('LogInterval', 'Number', {
-                'Default': 60,
-                'Description':
-                "How often, in minutes, the ELB emits its logs to the "
-                "configured S3 bucket. The ELB log facility restricts "
-                "this to be 5 or 60.",
-            }
-        )
-    )
 
     # Cognito Identity Pool for Developer Authenticated Identities Authflow
     # http://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html
