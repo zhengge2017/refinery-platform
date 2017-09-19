@@ -209,7 +209,7 @@ def make_template(config, config_yaml):
         core.DeletionPolicy("Snapshot"),
         )
 
-    volume_properties = {
+    data_volume_properties = {
         'Encrypted': True,
         'Size': config['DATA_VOLUME_SIZE'],
         'Tags': load_tags(),
@@ -220,12 +220,12 @@ def make_template(config, config_yaml):
     }
 
     if 'DATA_SNAPSHOT' in config:
-        volume_properties['SnapshotId'] = config['DATA_SNAPSHOT']
+        data_volume_properties['SnapshotId'] = config['DATA_SNAPSHOT']
 
     # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-ebs-volume.html
-    cft.resources.ebs = core.Resource(
-        'RefineryData', 'AWS::EC2::Volume',
-        core.Properties(volume_properties),
+    cft.resources.data_volume = core.Resource(
+        'RefineryDataVolume', 'AWS::EC2::Volume',
+        core.Properties(data_volume_properties),
         core.DeletionPolicy("Snapshot"),
     )
 
@@ -394,12 +394,12 @@ def make_template(config, config_yaml):
         })
     )
 
-    cft.resources.mount = core.Resource(
-        'RefineryVolume', 'AWS::EC2::VolumeAttachment',
+    cft.resources.data_volume_attachment = core.Resource(
+        'RefineryDataVolumeAttachment', 'AWS::EC2::VolumeAttachment',
         core.Properties({
             'Device': '/dev/xvdr',
             'InstanceId': functions.ref('WebInstance'),
-            'VolumeId': functions.ref('RefineryData'),
+            'VolumeId': functions.ref('RefineryDataVolume'),
         })
     )
 
