@@ -10,7 +10,3 @@ TEMPLATE_DEBUG = DEBUG
 ALLOWED_HOSTS = get_setting("ALLOWED_HOSTS")
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-
-# Only log DEBUG or greater for tests w/ prod settings
-if "test" in sys.argv:
-    logging.disable(logging.DEBUG)
