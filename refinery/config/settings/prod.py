@@ -1,6 +1,4 @@
 # custom settings for production environment
-import sys
-
 from .base import *  # NOQA
 
 DEBUG = False
