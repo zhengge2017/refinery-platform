@@ -21,11 +21,8 @@ import pysam
 import requests
 from requests.exceptions import HTTPError
 
-from core.models import DataSet, ExtendedGroup, FileStoreItem
-from core.utils import (add_data_set_to_neo4j,
-                        async_update_annotation_sets_neo4j,
-                        update_data_set_index)
-from file_store.models import FileExtension, generate_file_source_translator
+import core
+import file_store
 
 from .isa_tab_parser import IsaTabParser
 from .models import Investigation, Node, initialize_attribute_order
@@ -300,7 +297,7 @@ def create_dataset(investigation_uuid, username, identifier=None, title=None,
         "create_dataset: title = %s, identifer = %s, dataset_name = '%s'",
         title, identifier, dataset_name)
 
-    datasets = DataSet.objects.filter(name=dataset_name)
+    datasets = core.models.DataSet.objects.filter(name=dataset_name)
     # check if the investigation already exists
     if len(datasets):  # if not 0, update dataset with new investigation
         """go through datasets until you find one with the correct owner"""
@@ -314,14 +311,14 @@ def create_dataset(investigation_uuid, username, identifier=None, title=None,
                 break
     # create a new dataset if doesn't exist already for this user
     if not dataset:
-        dataset = DataSet.objects.create(name=dataset_name)
+        dataset = core.models.DataSet.objects.create(name=dataset_name)
         dataset.set_investigation(investigation)
         dataset.set_owner(user)
         dataset.accession = identifier
         dataset.title = title
         logger.info("create_dataset: Created data set '%s'", dataset_name)
     if public:
-        public_group = ExtendedGroup.objects.public_group()
+        public_group = core.models.ExtendedGroup.objects.public_group()
         dataset.share(public_group)
     # set dataset slug
     dataset.slug = slug
@@ -330,9 +327,9 @@ def create_dataset(investigation_uuid, username, identifier=None, title=None,
     dataset.file_count = dataset.get_file_count()
     dataset.save()
     # Finally index data set
-    update_data_set_index(dataset)
-    add_data_set_to_neo4j(dataset, user.id)
-    async_update_annotation_sets_neo4j()
+    core.utils.update_data_set_index(dataset)
+    core.utils.add_data_set_to_neo4j(dataset, user.id)
+    core.utils.async_update_annotation_sets_neo4j()
     return dataset.uuid
 
 
@@ -390,7 +387,7 @@ def parse_isatab(username, public, path, identity_id=None,
     pre_isa_archive: optional copy of files that were converted to ISA-Tab
     file_base_path: if your file locations are relative paths, this is the base
     """
-    file_source_translator = generate_file_source_translator(
+    file_source_translator = file_store.models.generate_file_source_translator(
         username=username, base_path=file_base_path, identity_id=identity_id
     )
     parser = IsaTabParser(
@@ -414,7 +411,7 @@ def parse_isatab(username, public, path, identity_id=None,
             datasets = []
         else:
             dataset_title = "%s: %s" % (identifier, title)
-            datasets = DataSet.objects.filter(name=dataset_title)
+            datasets = core.models.DataSet.objects.filter(name=dataset_title)
         # check if the investigation already exists
         if len(datasets):  # if not 0, update dataset with new investigation
             # go through datasets until you find one with the correct owner
@@ -429,14 +426,19 @@ def parse_isatab(username, public, path, identity_id=None,
                         # 3. Finally we need to get the checksum so that we can
                         # compare that to our given file.
                         investigation = ds.get_investigation()
-                        fileStoreItem = FileStoreItem.objects.get(
-                            uuid=investigation.isarchive_file)
-                        if fileStoreItem:
+                        file_store_item = (
+                            file_store.models.FileStoreItem.objects.get(
+                                uuid=investigation.isarchive_file
+                            )
+                        )
+                        if file_store_item:
                             try:
-                                logger.info("Get file: %s",
-                                            fileStoreItem.get_absolute_path())
+                                logger.info(
+                                    "Get file: %s",
+                                    file_store_item.get_absolute_path()
+                                )
                                 checksum = calculate_checksum(
-                                    fileStoreItem.get_file_object()
+                                    file_store_item.get_file_object()
                                 )
                             except IOError as exc:
                                 logger.error(
@@ -529,8 +531,9 @@ def generate_bam_index(auxiliary_file_store_item_uuid, datafile_path):
     # NOTE: that we are not handling the normal errors for an orm.get()s below
     # because we want the task from which this function is called within to
     # fail if we can't get what we want.
-    bam_index_file_extension = FileExtension.objects.get(name="bai").name
-    auxiliary_file_store_item = FileStoreItem.objects.get(
+    bam_index_file_extension = file_store.models.FileExtension.objects.get(
+        name="bai").name
+    auxiliary_file_store_item = file_store.models.FileStoreItem.objects.get(
         uuid=auxiliary_file_store_item_uuid)
 
     # Leverage pysam library to generate bam index file

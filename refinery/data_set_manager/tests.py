@@ -1837,11 +1837,11 @@ class IsaTabParserTests(TestCase):
             self.parse('missing-investigation')
 
     def test_mising_study(self):
-        with self.assertRaises(IOError):
+        with self.assertRaises(ParserException):
             self.parse('missing-study')
 
     def test_mising_assay(self):
-        with self.assertRaises(IOError):
+        with self.assertRaises(ParserException):
             self.parse('missing-assay')
 
     def test_multiple_investigation(self):
@@ -1861,7 +1861,7 @@ class IsaTabParserTests(TestCase):
         self.assertEqual(len(assays1), 1)
 
     def test_multiple_study_missing_assay(self):
-        with self.assertRaises(IOError):
+        with self.assertRaises(ParserException):
             self.parse('multiple-study-missing-assay')
 
     def test_multiple_assay(self):
@@ -1894,13 +1894,13 @@ class IsaTabParserTests(TestCase):
         )
 
     def test_bad_isatab_rollback_from_parser_exception_a(self):
-        with self.assertRaises(IOError):
+        with self.assertRaises(ParserException):
             parse_isatab(self.user.username, False,
                          "data_set_manager/test-data/HideLabBrokenA.zip")
         self.failed_isatab_assertions()
 
     def test_bad_isatab_rollback_from_parser_exception_b(self):
-        with self.assertRaises(IOError):
+        with self.assertRaises(ParserException):
             parse_isatab(self.user.username, False,
                          "data_set_manager/test-data/HideLabBrokenB.zip")
         self.failed_isatab_assertions()

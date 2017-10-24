@@ -8,6 +8,7 @@ import logging
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import pre_delete
 
 from celery.result import AsyncResult
 from django_extensions.db.fields import UUIDField
@@ -15,11 +16,8 @@ import requests
 from requests.exceptions import HTTPError
 
 import core
-from core.utils import skip_if_test_run
 import data_set_manager
-from file_store.models import FileStoreItem
-
-from .genomes import map_species_id_to_default_genome_build
+import file_store
 
 """
 TODO: Refactor import data_set_manager. Importing
@@ -80,19 +78,19 @@ class NodeCollection(models.Model):
             unicode(self.id)
         )
 
-    def normalize_date(self, dateString):
+    def normalize_date(self, date_string):
         """Normalizes date strings in dd/mm/yyyy format to yyyy-mm-dd.
         Returns normalized date string if in expected unnormalized format or
         unnormalized date string.
         """
-        logger.info("Converting date " + str(dateString) + " ...")
+        logger.info("Converting date " + str(date_string) + " ...")
         try:
             # try reformatting incorrect date format used by Nature Scientific
             # Data
             return str(
                 datetime.strftime(
                     datetime.strptime(
-                        dateString,
+                        date_string,
                         "%d/%m/%Y"
                     ),
                     "%Y-%m-%d"
@@ -101,8 +99,28 @@ class NodeCollection(models.Model):
         except ValueError:
             # ignore - date either in correct format or in format not supported
             # (will cause a validation error handled separately)
-            logger.info("Failed to convert date " + str(dateString))
-            return dateString
+            logger.info("Failed to convert date " + str(date_string))
+            return date_string
+
+
+@core.models.receiver_subclasses(
+    pre_delete,
+    NodeCollection,
+    "nodecollection_pre_delete"
+)
+def _nodecollection_delete(sender, instance, **kwargs):
+    '''
+        This finds all subclasses related to a DataSet's NodeCollections and
+        handles the deletion of all FileStoreItems related to the DataSet
+    '''
+    nodes = Node.objects.filter(study=instance)
+    for node in nodes:
+        try:
+            file_store.models.FileStoreItem.objects.get(
+                uuid=node.file_uuid
+            ).delete()
+        except Exception as e:
+            logger.debug("Could not delete FileStoreItem:%s" % str(e))
 
 
 class Publication(models.Model):
@@ -330,9 +348,9 @@ class NodeManager(models.Manager):
             if (item["genome_build"] is None and
                     item["species"] is not None and
                     default_fallback is True):
-                item["genome_build"] = map_species_id_to_default_genome_build(
-                    item["species"]
-                )
+                item["genome_build"] =  \
+                    data_set_manager.genomes.\
+                    map_species_id_to_default_genome_build(item["species"])
             if item["genome_build"] not in result:
                 result[item["genome_build"]] = []
             result[item["genome_build"]].append(item["file_uuid"])
@@ -491,10 +509,10 @@ class Node(models.Model):
         there isn't one
         """
         try:
-            return FileStoreItem.objects.get(
+            return file_store.models.FileStoreItem.objects.get(
                 uuid=self.file_uuid)
-        except (FileStoreItem.DoesNotExist,
-                FileStoreItem.MultipleObjectsReturned) as e:
+        except (file_store.models.FileStoreItem.DoesNotExist,
+                file_store.models.FileStoreItem.MultipleObjectsReturned) as e:
             logger.error(e)
             return None
 
@@ -560,13 +578,13 @@ class Node(models.Model):
         datafile if one exists, otherwise return None
         """
         try:
-            file_store_item = FileStoreItem.objects.get(
+            file_store_item = file_store.models.FileStoreItem.objects.get(
                 uuid=self.file_uuid
             )
             return file_store_item.get_datafile_url()
 
-        except (FileStoreItem.DoesNotExist,
-                FileStoreItem.MultipleObjectsReturned) as e:
+        except (file_store.models.FileStoreItem.DoesNotExist,
+                file_store.models.FileStoreItem.MultipleObjectsReturned) as e:
             logger.error(e)
             return None
 
@@ -601,14 +619,19 @@ class Node(models.Model):
 
             # Create an empty FileStoreItem (we do the datafile association
             # within the generate_auxiliary_file task
-            auxiliary_file_store_item = FileStoreItem.objects.create(
-                source='auxiliary_file')
-
+            auxiliary_file_store_item = (
+                file_store.models.FileStoreItem.objects.create(
+                    source='auxiliary_file'
+                )
+            )
             auxiliary_node = self._create_and_associate_auxiliary_node(
                 auxiliary_file_store_item.uuid)
 
             result = data_set_manager.tasks.generate_auxiliary_file.delay(
-                auxiliary_node, datafile_path, file_store_item)
+                auxiliary_node,
+                datafile_path,
+                file_store_item
+            )
 
             auxiliary_file_store_item.import_task_id = result.task_id
             auxiliary_file_store_item.save()
@@ -875,7 +898,7 @@ def _is_facet_attribute(attribute, study, assay):
     return (attribute_values / items) < ratio
 
 
-@skip_if_test_run
+@core.utils.skip_if_test_run
 def initialize_attribute_order(study, assay):
     """Initializes the AttributeOrder table after all nodes for the given study
     and assay have been indexed by Solr.

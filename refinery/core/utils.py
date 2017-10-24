@@ -21,11 +21,10 @@ import py2neo
 import requests
 from rest_framework.response import Response
 
-# These imports go against our coding style guide, but are necessary for the
-#  time being due to mutual import issues
 import core
-from core.search_indexes import DataSetIndex
 import data_set_manager
+
+from .search_indexes import DataSetIndex
 
 logger = logging.getLogger(__name__)
 

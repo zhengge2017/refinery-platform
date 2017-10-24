@@ -48,13 +48,8 @@ import pysolr
 from registration.models import RegistrationManager, RegistrationProfile
 from registration.signals import user_activated, user_registered
 
-from data_set_manager.models import (Assay, Investigation, Node,
-                                     NodeCollection, Study)
-from data_set_manager.search_indexes import NodeIndex
-from data_set_manager.utils import (add_annotated_nodes_selection,
-                                    index_annotated_nodes_selection)
-from file_store.models import FileStoreItem, FileType, get_file_size
-from file_store.tasks import rename
+import data_set_manager
+import file_store
 from galaxy_connector.galaxy_workflow import create_expanded_workflow_graph
 from galaxy_connector.models import Instance
 import tool_manager
@@ -672,18 +667,22 @@ class DataSet(SharableResource):
 
     def get_latest_study(self, version=None):
         try:
-            return Study.objects.get(
+            return data_set_manager.models.Study.objects.get(
                 investigation=(
                     self.get_latest_investigation_link(version).investigation
                 )
             )
-        except(Study.DoesNotExist, Study.MultipleObjectsReturned) as e:
+        except(data_set_manager.models.Study.DoesNotExist,
+               data_set_manager.models.Study.MultipleObjectsReturned) as e:
             raise RuntimeError("Couldn't properly fetch Study: {}".format(e))
 
     def get_latest_assay(self, version=None):
         try:
-            return Assay.objects.get(study=self.get_latest_study(version))
-        except(Assay.DoesNotExist, Assay.MultipleObjectsReturned) as e:
+            return data_set_manager.models.Assay.objects.get(
+                study=self.get_latest_study(version)
+            )
+        except(data_set_manager.models.Assay.DoesNotExist,
+               data_set_manager.models.Assay.MultipleObjectsReturned) as e:
             raise RuntimeError("Couldn't properly fetch Assay: {}".format(e))
 
     def get_investigation(self, version=None):
@@ -695,12 +694,12 @@ class DataSet(SharableResource):
             return None
 
     def get_studies(self, version=None):
-        return Study.objects.filter(
+        return data_set_manager.models.Study.objects.filter(
             investigation=self.get_investigation(version)
         )
 
     def get_assays(self, version=None):
-        return Assay.objects.filter(
+        return data_set_manager.models.Assay.objects.filter(
             study=self.get_studies(version)
         )
 
@@ -711,7 +710,7 @@ class DataSet(SharableResource):
 
         for study in investigation.study_set.all():
             file_count += (
-                Node.objects
+                data_set_manager.models.Node.objects
                 .filter(study=study.id, file_uuid__isnull=False)
                 .count()
             )
@@ -724,10 +723,10 @@ class DataSet(SharableResource):
         file_size = 0
 
         for study in investigation.study_set.all():
-            files = Node.objects.filter(
+            files = data_set_manager.models.Node.objects.filter(
                 study=study.id, file_uuid__isnull=False).values("file_uuid")
             for file in files:
-                size = get_file_size(
+                size = file_store.models.get_file_size(
                     file["file_uuid"], report_symlinks=True)
                 file_size += size
 
@@ -741,11 +740,12 @@ class DataSet(SharableResource):
         investigation = self.get_investigation()
 
         try:
-            return FileStoreItem.objects.get(
-                uuid=investigation.isarchive_file)
+            return file_store.models.FileStoreItem.objects.get(
+                uuid=investigation.isarchive_file
+            )
 
-        except (FileStoreItem.DoesNotExist,
-                FileStoreItem.MultipleObjectsReturned,
+        except (file_store.models.FileStoreItem.DoesNotExist,
+                file_store.models.FileStoreItem.MultipleObjectsReturned,
                 AttributeError) as e:
             logger.debug("Couldn't fetch FileStoreItem: %s", e)
 
@@ -757,11 +757,12 @@ class DataSet(SharableResource):
         investigation = self.get_investigation()
 
         try:
-            return FileStoreItem.objects.get(
-                    uuid=investigation.pre_isarchive_file)
+            return file_store.models.FileStoreItem.objects.get(
+                    uuid=investigation.pre_isarchive_file
+            )
 
-        except (FileStoreItem.DoesNotExist,
-                FileStoreItem.MultipleObjectsReturned,
+        except (file_store.models.FileStoreItem.DoesNotExist,
+                file_store.models.FileStoreItem.MultipleObjectsReturned,
                 AttributeError) as e:
             logger.debug("Couldn't fetch FileStoreItem: %s", e)
 
@@ -807,17 +808,25 @@ class DataSet(SharableResource):
         investigation = self.get_investigation()
 
         try:
-            study = Study.objects.get(investigation=investigation)
-        except (Study.DoesNotExist, Study.MultipleObjectsReturned) as e:
+            study = data_set_manager.models.Study.objects.get(
+                investigation=investigation
+            )
+        except (data_set_manager.models.Study.DoesNotExist,
+                data_set_manager.models.Study.MultipleObjectsReturned) as e:
             logger.error("Could not fetch Study properly: %s", e)
         else:
-            for node in Node.objects.filter(study=study):
+            nodes = data_set_manager.models.Node.objects.filter(study=study)
+            for node in nodes:
                 try:
                     file_store_items.append(
-                        FileStoreItem.objects.get(uuid=node.file_uuid)
+                        file_store.models.FileStoreItem.objects.get(
+                            uuid=node.file_uuid
+                        )
                     )
-                except(FileStoreItem.DoesNotExist,
-                       FileStoreItem.MultipleObjectsReturned) as e:
+                except(
+                    file_store.models.FileStoreItem.DoesNotExist,
+                    file_store.models.FileStoreItem.MultipleObjectsReturned
+                ) as e:
                     logger.error("Error while fetching FileStoreItem: %s", e)
 
         return file_store_items
@@ -849,7 +858,7 @@ def _dataset_saved(sender, instance, *args, **kwargs):
 
 class InvestigationLink(models.Model):
     data_set = models.ForeignKey(DataSet)
-    investigation = models.ForeignKey(Investigation)
+    investigation = models.ForeignKey("data_set_manager.Investigation")
     version = models.IntegerField(default=1)
     message = models.CharField(max_length=500, blank=True, null=True)
     date = models.DateTimeField(auto_now_add=True)
@@ -866,10 +875,12 @@ class InvestigationLink(models.Model):
 
     def get_node_collection(self):
         try:
-            return NodeCollection.objects.get(
+            return data_set_manager.models.NodeCollection.objects.get(
                 uuid=self.investigation.uuid)
-        except (NodeCollection.DoesNotExist,
-                NodeCollection.MultipleObjectsReturned) as e:
+        except (
+            data_set_manager.models.NodeCollection.DoesNotExist,
+            data_set_manager.models.NodeCollection.MultipleObjectsReturned
+        ) as e:
             logger.error("Could not fetch NodeCollection: %s", e)
 
 
@@ -1246,8 +1257,9 @@ class Analysis(OwnableResource):
         return self.status
 
     def get_nodes(self):
-        return Node.objects.filter(
-            analysis_uuid=self.uuid)
+        return data_set_manager.models.Node.objects.filter(
+            analysis_uuid=self.uuid
+        )
 
     def get_analysis_results(self):
         return AnalysisResult.objects.filter(analysis_uuid=self.uuid)
@@ -1374,14 +1386,15 @@ class Analysis(OwnableResource):
         input_file_uuid_list = []
         for files in self.workflow_data_input_maps.all():
             cur_node_uuid = files.data_uuid
-            cur_fs_uuid = Node.objects.get(
-                uuid=cur_node_uuid).file_uuid
+            cur_fs_uuid = data_set_manager.models.Node.objects.get(
+                uuid=cur_node_uuid
+            ).file_uuid
             input_file_uuid_list.append(cur_fs_uuid)
         return input_file_uuid_list
 
     def data_sets_query(self):
         analysis_facet_name = '{}_{}_{}_s'.format(
-            NodeIndex.ANALYSIS_UUID_PREFIX,
+            data_set_manager.search_indexes.NodeIndex.ANALYSIS_UUID_PREFIX,
             self.data_set.get_latest_study().id,
             self.data_set.get_latest_assay().id,
         )
@@ -1491,17 +1504,23 @@ class Analysis(OwnableResource):
             # workaround for FastQC reports downloaded from Galaxy as zip
             # archives
             (root, ext) = os.path.splitext(new_file_name)
-            item = FileStoreItem.objects.get_item(uuid=result.file_store_uuid)
+            item = file_store.models.FileStoreItem.objects.get_item(
+                uuid=result.file_store_uuid
+            )
             if ext == '.html':
                 try:
-                    zipfile = FileType.objects.get(name="ZIP")
-                except (FileType.DoesNotExist,
-                        FileType.MultipleObjectsReturned) as exc:
+                    zipfile = file_store.models.FileType.objects.get(
+                        name="ZIP"
+                    )
+                except (
+                    file_store.models.FileType.DoesNotExist,
+                    file_store.models.FileType.MultipleObjectsReturned
+                ) as exc:
                     logger.error("Error renaming HTML to zip: %s", exc)
                 else:
                     if item.get_filetype() == zipfile:
                         new_file_name = ''.join([root, '.zip'])
-            renamed_file_store_item_uuid = rename(
+            renamed_file_store_item_uuid = file_store.tasks.rename(
                 result.file_store_uuid,
                 new_file_name
             )
@@ -1516,8 +1535,11 @@ class Analysis(OwnableResource):
                 renamed_file_store_item_uuid else result.file_store_uuid
             )
             try:
-                node = Node.objects.get(file_uuid=file_store_item_uuid)
-            except (Node.DoesNotExist, Node.MultipleObjectsReturned) as e:
+                node = data_set_manager.models.Node.objects.get(
+                    file_uuid=file_store_item_uuid
+                )
+            except (data_set_manager.models.Node.DoesNotExist,
+                    data_set_manager.models.Node.MultipleObjectsReturned) as e:
                 logger.error("Error Fetching Node: %s", e)
             else:
                 if node.is_derived():
@@ -1550,11 +1572,11 @@ class Analysis(OwnableResource):
                 data_transformation_node['name']
             )
             data_transformation_node['node'] = (
-                Node.objects.create(
+                data_set_manager.models.Node.objects.create(
                     study=study,
                     assay=assay,
                     analysis_uuid=self.uuid,
-                    type=Node.DATA_TRANSFORMATION,
+                    type=data_set_manager.models.Node.DATA_TRANSFORMATION,
                     name=node_name
                 )
             )
@@ -1655,9 +1677,9 @@ class Analysis(OwnableResource):
             is_refinery_file=True
         ).values_list('node__uuid', flat=True)
 
-        add_annotated_nodes_selection(
+        data_set_manager.utils.add_annotated_nodes_selection(
             node_uuids,
-            Node.DERIVED_DATA_FILE,
+            data_set_manager.models.Node.DERIVED_DATA_FILE,
             study.uuid,
             assay.uuid
         )
@@ -1673,7 +1695,7 @@ class Analysis(OwnableResource):
             return
 
         for analysis_result in analysis_results:
-            item = FileStoreItem.objects.get(
+            item = file_store.models.FileStoreItem.objects.get(
                 uuid=analysis_result.file_store_uuid)
             if item:
                 download = Download.objects.create(name=self.name,
@@ -1694,9 +1716,13 @@ class Analysis(OwnableResource):
 
         for uuid in file_store_item_uuids:
             try:
-                file_store_item = FileStoreItem.objects.get(uuid=uuid)
-            except (FileStoreItem.DoesNotExist,
-                    FileStoreItem.MultipleObjectsReturned) as e:
+                file_store_item = file_store.models.FileStoreItem.objects.get(
+                    uuid=uuid
+                )
+            except (
+                file_store.models.FileStoreItem.DoesNotExist,
+                file_store.models.FileStoreItem.MultipleObjectsReturned
+            ) as e:
                 logger.error(
                     "Couldn't properly fetch FileStoreItem with UUID: %s %s",
                     uuid,
@@ -1718,7 +1744,7 @@ class Analysis(OwnableResource):
         core.tests.test__prepare_annotated_nodes_calls_methods_in_proper_order
         """
         self.rename_results()
-        index_annotated_nodes_selection(node_uuids)
+        data_set_manager.utils.index_annotated_nodes_selection(node_uuids)
 
     def _get_output_connection_to_analysis_result_mapping(self):
         """
@@ -1764,10 +1790,10 @@ class Analysis(OwnableResource):
 
     def _create_derived_data_file_node(self, study,
                                        assay, analysis_node_connection):
-        return Node.objects.create(
+        return data_set_manager.models.Node.objects.create(
             study=study,
             assay=assay,
-            type=Node.DERIVED_DATA_FILE,
+            type=data_set_manager.models.Node.DERIVED_DATA_FILE,
             name=analysis_node_connection.galaxy_dataset_name,
             analysis_uuid=self.uuid,
             subanalysis=analysis_node_connection.subanalysis,
@@ -1791,7 +1817,7 @@ class AnalysisNodeConnection(models.Model):
     # workflow template
     # (unique within the analysis)
     subanalysis = IntegerField(null=True, blank=False)
-    node = models.ForeignKey(Node,
+    node = models.ForeignKey("data_set_manager.Node",
                              related_name="workflow_node_connections",
                              null=True, blank=True, default=None)
     # step id in the expanded workflow template, e.g. 10
@@ -1832,7 +1858,11 @@ class AnalysisNodeConnection(models.Model):
 class Download(TemporaryResource, OwnableResource):
     data_set = models.ForeignKey(DataSet)
     analysis = models.ForeignKey(Analysis, default=None, null=True)
-    file_store_item = models.ForeignKey(FileStoreItem, default=None, null=True)
+    file_store_item = models.ForeignKey(
+        "file_store.FileStoreItem",
+        default=None,
+        null=True
+    )
 
     class Meta:
         verbose_name = "download"
@@ -1944,8 +1974,8 @@ class NodeSet(SharableResource, TemporaryResource):
     #: Implicit node is created "on the fly" to support an analysis while
     #: explicit node is created by the user to store a particular selection
     is_implicit = models.BooleanField(default=False)
-    study = models.ForeignKey(Study)
-    assay = models.ForeignKey(Assay)
+    study = models.ForeignKey("data_set_manager.Study")
+    assay = models.ForeignKey("data_set_manager.Assay")
     # is this the "current selection" node set for the associated study/assay?
     is_current = models.BooleanField(default=False)
 
@@ -2083,10 +2113,10 @@ class NodePair(models.Model):
     """Linking of specific node relationships for a given node relationship"""
     uuid = UUIDField(unique=True, auto=True)
     #: specific file node
-    node1 = models.ForeignKey(Node,
+    node1 = models.ForeignKey("data_set_manager.Node",
                               related_name="node1")
     #: connected file node
-    node2 = models.ForeignKey(Node,
+    node2 = models.ForeignKey("data_set_manager.Node",
                               related_name="node2", blank=True,
                               null=True)
     # defines a grouping of node relationships i.e. replicate
@@ -2108,8 +2138,8 @@ class NodeRelationship(BaseResource):
                                    blank=True, null=True)
     node_set_2 = models.ForeignKey(NodeSet, related_name='node_set_2',
                                    blank=True, null=True)
-    study = models.ForeignKey(Study)
-    assay = models.ForeignKey(Assay)
+    study = models.ForeignKey("data_set_manager.Study")
+    assay = models.ForeignKey("data_set_manager.Assay")
     # is this the "current mapping" node set for the associated study/assay?
     is_current = models.BooleanField(default=False)
 
@@ -2386,21 +2416,6 @@ def _baseresource_save(sender, instance, **kwargs):
         BaseResource after being saved
     '''
     invalidate_cached_object(instance)
-
-
-@receiver_subclasses(pre_delete, NodeCollection,
-                     "nodecollection_pre_delete")
-def _nodecollection_delete(sender, instance, **kwargs):
-    '''
-        This finds all subclasses related to a DataSet's NodeCollections and
-        handles the deletion of all FileStoreItems related to the DataSet
-    '''
-    nodes = Node.objects.filter(study=instance)
-    for node in nodes:
-        try:
-            FileStoreItem.objects.get(uuid=node.file_uuid).delete()
-        except Exception as e:
-            logger.debug("Could not delete FileStoreItem:%s" % str(e))
 
 
 class AuthenticationFormUsernameOrEmail(AuthenticationForm):

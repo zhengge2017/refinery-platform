@@ -1,7 +1,8 @@
 from datetime import datetime
 import uuid as uuid_builtin
 
-from core.models import Analysis, DataSet, Node
+import core
+import data_set_manager
 from factory_boy.django_model_factories import (AnalysisFactory,
                                                 AnnotatedNodeFactory,
                                                 AssayFactory, AttributeFactory,
@@ -21,7 +22,7 @@ def make_datasets(number_to_create, user_instance):
         create_dataset_with_necessary_models()
         number_to_create -= 1
 
-    for dataset in DataSet.objects.all():
+    for dataset in core.models.DataSet.objects.all():
         dataset.set_owner(user_instance)
         dataset.save()
 
@@ -48,11 +49,11 @@ def make_analyses_with_single_dataset(number_to_create, user_instance):
 
         number_to_create -= 1
 
-    for dataset in DataSet.objects.all():
+    for dataset in core.models.DataSet.objects.all():
         dataset.set_owner(user_instance)
         dataset.save()
 
-    for analysis in Analysis.objects.all():
+    for analysis in core.models.Analysis.objects.all():
         analysis.set_owner(user_instance)
         analysis.save()
 
@@ -103,7 +104,7 @@ def create_dataset_with_necessary_models(create_nodes=True):
                 assay=assay,
                 node=node,
                 node_name='AnnotatedNode-{}'.format(i),
-                node_type=Node.RAW_DATA_FILE,
+                node_type=data_set_manager.models.Node.RAW_DATA_FILE,
                 attribute=attribute
             )
 

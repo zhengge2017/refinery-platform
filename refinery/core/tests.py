@@ -1560,7 +1560,7 @@ class AnalysisTests(TestCase):
             quote('_s": "') + UUID_RE + quote('"}')
         )
 
-    @mock.patch("core.models.index_annotated_nodes_selection")
+    @mock.patch("data_set_manager.utils.index_annotated_nodes_selection")
     @mock.patch.object(Analysis, "rename_results")
     def test__prepare_annotated_nodes_calls_methods_in_proper_order(
             self,

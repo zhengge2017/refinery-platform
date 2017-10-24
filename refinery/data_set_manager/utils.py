@@ -582,6 +582,7 @@ def index_annotated_nodes_selection(node_uuids):
     _index_annotated_nodes(None, None, None, node_uuids)
 
 
+@core.utils.skip_if_test_run
 def _index_annotated_nodes(node_type, study_uuid, assay_uuid=None,
                            node_uuids=None):
     if node_uuids is None:
@@ -864,9 +865,11 @@ def get_owner_from_assay(uuid):
         return "Error: Invalid uuid"
 
     investigation_link = core.models.InvestigationLink.objects.get(
-            investigation=investigation_key)
+            investigation=investigation_key
+    )
     owner = core.models.DataSet.objects.get(
-            investigationlink=investigation_link).get_owner()
+            investigationlink=investigation_link
+    ).get_owner()
 
     return owner
 

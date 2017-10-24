@@ -15,8 +15,7 @@ import string
 import tempfile
 from zipfile import ZipFile
 
-from file_store.models import FileStoreItem
-from file_store.tasks import create, import_file
+import file_store
 
 from .models import (Assay, Attribute, Contact, Design, Factor, Investigation,
                      Node, Ontology, Protocol, ProtocolReference,
@@ -324,8 +323,12 @@ class IsaTabParser:
                     node_name is not ""):
                 # create the nodes for the data file in this row
                 file_path = self.file_source_translator(node_name)
-                file_store_item = FileStoreItem.objects.create_item(
-                    source=file_path, sharename='', filetype=''
+                file_store_item = (
+                    file_store.models.FileStoreItem.objects.create_item(
+                        source=file_path,
+                        sharename='',
+                        filetype=''
+                    )
                 )
                 if file_store_item:
                     node.file_uuid = file_store_item.uuid
@@ -1026,17 +1029,24 @@ class IsaTabParser:
             )
         # 5. assign ISA-Tab archive and pre-ISA-Tab archive if present
         try:
-            self._current_investigation.isarchive_file = create(isa_archive)
-            import_file(self._current_investigation.isarchive_file,
-                        refresh=True)
+            self._current_investigation.isarchive_file = (
+                file_store.tasks.create(isa_archive)
+            )
+            file_store.tasks.import_file(
+                self._current_investigation.isarchive_file,
+                refresh=True
+            )
         except:
             pass
 
         if preisa_archive:
-            self._current_investigation.pre_isarchive_file = \
-                create(preisa_archive)
-            import_file(self._current_investigation.pre_isarchive_file,
-                        refresh=True)
+            self._current_investigation.pre_isarchive_file = (
+                file_store.tasks.create(preisa_archive)
+            )
+            file_store.tasks.import_file(
+                self._current_investigation.pre_isarchive_file,
+                refresh=True
+            )
 
         self._current_investigation.save()
         return self._current_investigation

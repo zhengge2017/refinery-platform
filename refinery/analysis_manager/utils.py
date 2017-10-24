@@ -13,9 +13,8 @@ import jsonschema
 import requests
 from requests.packages.urllib3.exceptions import HTTPError
 
-from core.models import (Analysis, NodeRelationship, NodeSet, Study, Workflow,
-                         WorkflowDataInputMap)
-from core.utils import get_aware_local_time
+import core
+import data_set_manager
 import tool_manager
 
 logger = logging.getLogger(__name__)
@@ -45,12 +44,12 @@ def create_analysis(validated_analysis_config):
             tool_manager.models.WorkflowTool.MultipleObjectsReturned) as e:
         raise RuntimeError("Couldn't fetch Tool from UUID: {}".format(e))
 
-    analysis = Analysis.objects.create(
+    analysis = core.models.Analysis.objects.create(
         uuid=str(uuid.uuid4()),
         summary="Galaxy workflow execution for: {}".format(tool.name),
         name="{} - {} - {}".format(
             tool.get_tool_name(),
-            get_aware_local_time().strftime("%Y/%m/%d %H:%M:%S"),
+            core.utils.get_aware_local_time().strftime("%Y/%m/%d %H:%M:%S"),
             tool.get_owner_username().title()
         ),
         project=user.profile.catch_all_project,
@@ -81,15 +80,17 @@ def fetch_objects_required_for_analysis(validated_analysis_config):
         )
 
     try:
-        current_workflow = Workflow.objects.get(uuid=workflow_uuid)
-    except(Workflow.DoesNotExist, Workflow.MultipleObjectsReturned) as e:
+        current_workflow = core.models.Workflow.objects.get(uuid=workflow_uuid)
+    except(core.models.Workflow.DoesNotExist,
+           core.models.Workflow.MultipleObjectsReturned) as e:
         raise RuntimeError(
             "Couldn't fetch Workflow from UUID: {} {}".format(workflow_uuid, e)
         )
 
     try:
-        study = Study.objects.get(uuid=study_uuid)
-    except(Study.DoesNotExist, Study.MultipleObjectsReturned) as e:
+        study = data_set_manager.models.Study.objects.get(uuid=study_uuid)
+    except(data_set_manager.models.Study.DoesNotExist,
+           data_set_manager.models.Study.MultipleObjectsReturned) as e:
         raise RuntimeError(
             "Couldn't fetch Study {}: {}".format(study_uuid, e)
         )
@@ -218,7 +219,7 @@ def _associate_workflow_data_inputs(analysis, current_workflow, solr_uuids):
     count = 0
     for file_uuid in solr_uuids:
         count += 1
-        temp_input = WorkflowDataInputMap.objects.create(
+        temp_input = core.models.WorkflowDataInputMap.objects.create(
             workflow_data_input_name=workflow_data_inputs.name,
             data_uuid=file_uuid,
             pair_id=count
@@ -235,7 +236,7 @@ def _create_analysis_name(current_workflow):
     """
     return "{} {}".format(
         current_workflow.name,
-        get_aware_local_time().strftime("%Y-%m-%d @ %H:%M:%S")
+        core.utils.get_aware_local_time().strftime("%Y-%m-%d @ %H:%M:%S")
     )
 
 
@@ -247,9 +248,10 @@ def _fetch_node_relationship(node_relationship_uuid):
     :raises: RuntimeError
     """
     try:
-        return NodeRelationship.objects.get(uuid=node_relationship_uuid)
-    except(NodeRelationship.DoesNotExist,
-           NodeRelationship.MultipleObjectsReturned) as e:
+        return core.models.NodeRelationship.objects.get(
+            uuid=node_relationship_uuid)
+    except(core.models.NodeRelationship.DoesNotExist,
+           core.models.NodeRelationship.MultipleObjectsReturned) as e:
         raise RuntimeError(
             "Couldn't fetch NodeRelationship from UUID: {} {}"
             .format(node_relationship_uuid, e)
@@ -264,8 +266,9 @@ def _fetch_node_set(node_set_uuid):
     :raises: RuntimeError
     """
     try:
-        return NodeSet.objects.get(uuid=node_set_uuid)
-    except(NodeSet.DoesNotExist, NodeSet.MultipleObjectsReturned) as e:
+        return core.models.NodeSet.objects.get(uuid=node_set_uuid)
+    except(core.models.NodeSet.DoesNotExist,
+           core.models.NodeSet.MultipleObjectsReturned) as e:
         raise RuntimeError(
             "Couldn't fetch NodeSet from UUID: {} {}".format(node_set_uuid, e)
         )
