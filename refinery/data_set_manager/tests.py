@@ -1847,15 +1847,15 @@ class IsaTabParserTests(IsaTabTestBase):
         assays = studies[0].assay_set.all()
         self.assertEqual(len(assays), 1)
 
-    def test_mising_investigation(self):
+    def test_missing_investigation(self):
         with self.assertRaises(ParserException):
             self.parse('missing-investigation')
 
-    def test_mising_study(self):
+    def test_missing_study(self):
         with self.assertRaises(ParserException):
             self.parse('missing-study')
 
-    def test_mising_assay(self):
+    def test_missing_assay(self):
         with self.assertRaises(ParserException):
             self.parse('missing-assay')
 
