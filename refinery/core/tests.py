@@ -1892,7 +1892,6 @@ class UserTutorialsTest(TestCase):
 
 class DataSetResourceTest(ResourceTestCase):
     """Test DataSet V1 REST API operations"""
-
     def setUp(self):
         super(DataSetResourceTest, self).setUp()
         self.username = self.password = 'user'
@@ -1908,8 +1907,10 @@ class DataSetResourceTest(ResourceTestCase):
         self.user_catch_all_project = UserProfile.objects.get(
             user=self.user
         ).catch_all_project
-        self.dataset = DataSet.objects.create(name="Dataset 1")
-        self.dataset2 = DataSet.objects.create(name="Dataset 2")
+        self.dataset = create_dataset_with_necessary_models()
+        self.incomplete_dataset = DataSet.objects.create(
+            name="Incomplete Dataset"
+        )
         self.galaxy_instance = Instance.objects.create()
         self.workflow_engine = WorkflowEngine.objects.create(
             instance=self.galaxy_instance
@@ -1917,16 +1918,6 @@ class DataSetResourceTest(ResourceTestCase):
         self.workflow = Workflow.objects.create(
             workflow_engine=self.workflow_engine
         )
-        self.investigation = Investigation.objects.create()
-        self.study = Study.objects.create(investigation=self.investigation)
-        self.assay = Assay.objects.create(
-            study=self.study)
-        self.investigation_link = \
-            InvestigationLink.objects.create(
-                investigation=self.investigation,
-                data_set=self.dataset,
-                version=1
-            )
 
     def get_credentials(self):
         """Authenticate as self.user"""
@@ -1944,8 +1935,7 @@ class DataSetResourceTest(ResourceTestCase):
 
         self.dataset.set_owner(self.user)
 
-        dataset_uri = make_api_uri(
-            "data_sets", self.dataset.uuid)
+        dataset_uri = make_api_uri("data_sets", self.dataset.uuid)
         response = self.api_client.get(
             dataset_uri,
             format='json'
@@ -2024,20 +2014,21 @@ class DataSetResourceTest(ResourceTestCase):
 
     def test_detail_response_yields_error_if_incomplete_dataset(self):
         # DataSets that aren't fully created will yield informative errors
-        self.dataset2.set_owner(self.user)
+        self.incomplete_dataset.set_owner(self.user)
 
         dataset_uri = make_api_uri(
             "data_sets",
-            self.dataset2.uuid
+            self.incomplete_dataset.uuid
         )
-        with self.assertRaises(NotFound):
+        with self.assertRaises(NotFound) as context:
             self.api_client.get(dataset_uri, format='json')
+        self.assertIn("still being created", context.exception.message)
 
     def test_list_response_yields_complete_datasets_only(self):
         # DataSets that aren't fully created will not be displayed in the
         # list api response
         self.dataset.set_owner(self.user)
-        self.dataset2.set_owner(self.user)
+        self.incomplete_dataset.set_owner(self.user)
 
         resp = self.api_client.get(make_api_uri('data_sets'), format='json')
         self.assertValidJSONResponse(resp)
