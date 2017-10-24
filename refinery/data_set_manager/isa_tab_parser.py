@@ -995,15 +995,30 @@ class IsaTabParser:
                 # parse study file
                 self._current_assay = None
                 study_file_name = os.path.join(path, study.file_name)
-                if fix_last_column(study_file_name):
+                try:
+                    last_column_fixed = fix_last_column(study_file_name)
+                except RuntimeError as e:
+                    raise ParserException(e.message)
+
+                if last_column_fixed:
                     self._parse_study_file(study, study_file_name)
                     for assay in study.assay_set.all():
                         # parse assay file
                         self._previous_node = None
                         assay_file_name = os.path.join(path, assay.file_name)
-                        if fix_last_column(assay_file_name):
-                            self._parse_assay_file(study, assay,
-                                                   assay_file_name)
+                        try:
+                            last_column_fixed = fix_last_column(
+                                assay_file_name
+                            )
+                        except RuntimeError as e:
+                            raise ParserException(e.message)
+
+                        if last_column_fixed:
+                            self._parse_assay_file(
+                                study,
+                                assay,
+                                assay_file_name
+                            )
         else:
             raise ParserException(
                 "No investigation was identified when parsing investigation "

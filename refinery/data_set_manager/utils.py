@@ -1105,10 +1105,15 @@ def fix_last_column(file):
     Parameters:
     file: name of file to fix
     """
-    # TODO: exception handling for file operations (IOError)
     logger.info("trying to fix the last column if necessary")
     # FIXME: use context manager to handle file opening and closing
-    reader = csv.reader(open(file, 'rU'), dialect='excel-tab')
+    try:
+        reader = csv.reader(open(file, 'rU'), dialect='excel-tab')
+    except IOError as e:
+        raise RuntimeError(
+            "Unable to read file from {!r} {}.".format(file, e)
+        )
+
     tempfilename = tempfile.NamedTemporaryFile().name
     writer = csv.writer(open(tempfilename, 'wb'), dialect='excel-tab')
     # check that all rows have the same length

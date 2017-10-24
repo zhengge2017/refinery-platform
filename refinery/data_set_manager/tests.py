@@ -1949,7 +1949,7 @@ class ProcessISATabViewTests(TestCase):
 
     def test_post_bad_isa_tab_file(self):
         with open('data_set_manager/test-data/HideLabBrokenA.zip') as bad_isa:
-            self.client.post(
+            response = self.client.post(
                 self.isa_tab_import_url,
                 data={
                     "isa_tab_url": None,
@@ -1957,4 +1957,5 @@ class ProcessISATabViewTests(TestCase):
                 },
                 HTTP_X_REQUESTED_WITH='XMLHttpRequest'
             )
+            self.assertIn("Unable to read file", response.content)
         self.unsuccessful_import_assertions()
