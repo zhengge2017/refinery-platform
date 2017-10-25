@@ -2,6 +2,7 @@ import StringIO
 import ast
 import json
 import logging
+import os
 import time
 from urlparse import urljoin
 import uuid
@@ -57,7 +58,7 @@ from factory_boy.django_model_factories import (AnnotatedNodeFactory,
                                                 AttributeFactory, NodeFactory,
                                                 ParameterFactory, ToolFactory)
 from factory_boy.utils import create_dataset_with_necessary_models
-from file_store.models import FileStoreItem
+from file_store.models import FileStoreItem, FileType
 from galaxy_connector.models import Instance
 from selenium_testing.utils import (MAX_WAIT, SeleniumTestBaseGeneric,
                                     wait_until_class_visible)
@@ -65,8 +66,9 @@ from tool_manager.tasks import django_docker_cleanup
 
 from .models import (FileRelationship, GalaxyParameter, InputFile, Parameter,
                      Tool, ToolDefinition, VisualizationTool, WorkflowTool)
-from .utils import (create_tool, create_tool_definition,
-                    validate_tool_annotation,
+from .utils import (FileTypeValidationError, create_tool,
+                    create_tool_definition, get_visualization_annotations_list,
+                    get_workflows, validate_tool_annotation,
                     validate_tool_launch_configuration,
                     validate_workflow_step_annotation)
 from .views import ToolDefinitionsViewSet, ToolsViewSet
@@ -524,8 +526,19 @@ class ToolDefinitionAPITests(ToolManagerTestBase, APITestCase):
             tool_annotation["workflow_engine_uuid"] = self.workflow_engine.uuid
             create_tool_definition(tool_annotation)
 
+        self.dataset = create_dataset_with_necessary_models()
+        self.dataset.set_owner(self.user)
+
+        self.public_dataset = create_dataset_with_necessary_models()
+        self.public_dataset.share(self.public_group)
+
         # Make reusable requests & responses
-        self.get_request = self.factory.get(self.tool_defs_url_root)
+        self.get_request = self.factory.get(
+            "{}?dataSetUuid={}".format(
+                self.tool_defs_url_root,
+                self.dataset.uuid
+            )
+        )
         force_authenticate(self.get_request, self.user)
         self.get_response = self.tool_defs_view(self.get_request)
 
@@ -533,28 +546,24 @@ class ToolDefinitionAPITests(ToolManagerTestBase, APITestCase):
 
         self.delete_request = self.factory.delete(
             urljoin(self.tool_defs_url_root, self.tool_json['uuid']))
-        force_authenticate(self.delete_request, self.user)
         self.delete_response = self.tool_defs_view(self.delete_request)
         self.put_request = self.factory.put(
             self.tool_defs_url_root,
             data=self.tool_json,
             format="json"
         )
-        force_authenticate(self.put_request, self.user)
         self.put_response = self.tool_defs_view(self.put_request)
         self.post_request = self.factory.post(
             self.tool_defs_url_root,
             data=self.tool_json,
             format="json"
         )
-        force_authenticate(self.post_request, self.user)
         self.post_response = self.tool_defs_view(self.post_request)
         self.options_request = self.factory.options(
             self.tool_defs_url_root,
             data=self.tool_json,
             format="json"
         )
-        force_authenticate(self.options_request, self.user)
         self.options_response = self.tool_defs_view(self.options_request)
 
     def test_tool_definitions_exist(self):
@@ -571,14 +580,6 @@ class ToolDefinitionAPITests(ToolManagerTestBase, APITestCase):
             ).count(),
             1
         )
-
-    def test_get_request_authenticated(self):
-        self.assertIsNotNone(self.get_response)
-
-    def test_get_request_no_auth(self):
-        self.get_request = self.factory.get(self.tool_defs_url_root)
-        self.get_response = self.tool_defs_view(self.get_request)
-        self.assertEqual(self.get_response.status_code, 403)
 
     def test_unallowed_http_verbs(self):
         self.assertEqual(
@@ -603,6 +604,68 @@ class ToolDefinitionAPITests(ToolManagerTestBase, APITestCase):
                 elif (tool_definition["tool_type"] ==
                       ToolDefinition.VISUALIZATION):
                     self.assertNotIn("galaxy_workflow_step", parameter.keys())
+
+    def test_request_from_owned_dataset_shows_all_tool_defs(self):
+        self.assertNotEqual(len(self.get_response.data), 0)
+        for tool_definition in self.get_response.data:
+            tool_definition = ToolDefinition.objects.get(
+                uuid=tool_definition["uuid"]
+            )
+            self.assertIn(tool_definition, ToolDefinition.objects.all())
+
+    def test_request_from_public_dataset_shows_vis_tools_only(self):
+        get_request = self.factory.get(
+            "{}?dataSetUuid={}".format(
+                self.tool_defs_url_root,
+                self.public_dataset.uuid
+            )
+        )
+        force_authenticate(get_request, self.user)
+        get_response = self.tool_defs_view(get_request)
+        self.assertNotEqual(len(get_response.data), 0)
+        for tool_definition in get_response.data:
+            self.assertIn(
+                ToolDefinition.objects.get(
+                    uuid=tool_definition["uuid"]
+                ),
+                ToolDefinition.objects.filter(
+                    tool_type=ToolDefinition.VISUALIZATION
+                )
+            )
+
+    def test_no_query_params_in_get_yields_bad_request(self):
+        get_request = self.factory.get(self.tool_defs_url_root)
+        force_authenticate(get_request, self.user)
+        get_response = self.tool_defs_view(get_request)
+        self.assertEqual(get_response.status_code, 400)
+        self.assertIn("Must specify a Dataset UUID", get_response.data)
+
+    def test_bad_query_params_in_get_yields_bad_request(self):
+        get_request = self.factory.get(
+            "{}?coffee={}".format(
+                self.tool_defs_url_root,
+                self.dataset.uuid
+            )
+        )
+        force_authenticate(get_request, self.user)
+        get_response = self.tool_defs_view(get_request)
+        self.assertEqual(get_response.status_code, 400)
+        self.assertIn("Must specify a Dataset UUID", get_response.data)
+
+    def test_missing_dataset_in_get_yields_bad_request(self):
+        dataset_uuid = self.dataset.uuid
+        self.dataset.delete()
+
+        get_request = self.factory.get(
+            "{}?dataSetUuid={}".format(
+                self.tool_defs_url_root,
+                dataset_uuid
+            )
+        )
+        force_authenticate(get_request, self.user)
+        get_response = self.tool_defs_view(get_request)
+        self.assertEqual(get_response.status_code, 400)
+        self.assertIn("Couldn't fetch Dataset", get_response.data)
 
 
 class ToolDefinitionGenerationTests(ToolManagerTestBase):
@@ -1080,10 +1143,8 @@ class ToolDefinitionGenerationTests(ToolManagerTestBase):
 
             # Assert that the new workflow tool definitions id's were
             # incremented
-            self.assertEqual(
-                new_ids,
-                sorted([_id + 3 for _id in original_ids])
-            )
+            for original_id in original_ids:
+                self.assertIn(original_id + 3, new_ids)
             self.assertEqual(get_wf_mock.call_count, 2)
 
     def test_generate_tool_definitions_with_force_allows_user_dismissal(
@@ -1197,6 +1258,42 @@ class ToolDefinitionGenerationTests(ToolManagerTestBase):
                 visualization_annotation
             )
             self.assertEqual(ToolDefinition.objects.count(), 0)
+
+    def test_visualization_generation_with_no_image_version_yields_error(self):
+        with open(
+            "{}/visualizations/no_docker_image_version.json".format(
+                TEST_DATA_PATH
+            )
+        ) as f:
+            tool_annotation = [json.loads(f.read())]
+
+        with mock.patch(
+            self.mock_vis_annotations_reference,
+            return_value=tool_annotation
+        ):
+            with self.assertRaises(CommandError) as context:
+                call_command("generate_tool_definitions", visualizations=True)
+            self.assertIn("no specified version", context.exception.message)
+
+    def test_tool_def_generation_with_bad_filetype_yields_error(self):
+        with open(
+                "{}/visualizations/bad_filetype.json".format(
+                    TEST_DATA_PATH
+                )
+        ) as f:
+            tool_annotation = [json.loads(f.read())]
+
+        with mock.patch(
+                self.mock_vis_annotations_reference,
+                return_value=tool_annotation
+        ):
+            with self.assertRaises(CommandError) as context:
+                call_command("generate_tool_definitions", visualizations=True)
+            self.assertIn("BAD FILETYPE", context.exception.message)
+            self.assertIn(
+                str([filetype.name for filetype in FileType.objects.all()]),
+                context.exception.message
+            )
 
 
 class ToolDefinitionTests(ToolManagerTestBase):
@@ -3201,3 +3298,91 @@ class ToolLaunchConfigurationTests(ToolManagerTestBase):
             )
         }
         validate_tool_launch_configuration(tool_launch_configuration)
+
+
+class ToolManagerUtilitiesTests(ToolManagerTestBase):
+    def test_file_type_validation_error(self):
+        bad_filetype = "COFFEE"
+        error_message = "FileType `{}` does not exist".format(bad_filetype)
+
+        file_type_validation_error = FileTypeValidationError(
+            bad_filetype,
+            error_message
+        )
+        self.assertIn(bad_filetype, file_type_validation_error.message)
+        self.assertIn(error_message, file_type_validation_error.message)
+        self.assertIn(
+            str([f.name for f in FileType.objects.all()]),
+            file_type_validation_error.message
+        )
+
+    def test_get_visualization_annotations_list(self):
+        settings.VISUALIZATION_ANNOTATION_BASE_PATH = os.path.abspath(
+            os.getcwd()
+        )
+        tool_definition_name = "dummy.json"
+        tool_definition = {
+            "is_tool_definition": True
+        }
+        tool_definition_path = os.path.join(
+            settings.VISUALIZATION_ANNOTATION_BASE_PATH,
+            tool_definition_name
+        )
+        with open(tool_definition_path, "w") as f:
+            f.write(json.dumps(tool_definition))
+
+        visualization_annotations = get_visualization_annotations_list()
+        self.assertEqual(
+            visualization_annotations,
+            [
+                {
+                    "is_tool_definition": True
+                }
+            ]
+        )
+        os.remove(tool_definition_name)
+
+    @mock.patch(
+        "bioblend.galaxy.workflows.WorkflowClient.export_workflow_json",
+        return_value="workflow_graph"
+    )
+    @mock.patch(
+        "bioblend.galaxy.workflows.WorkflowClient.show_workflow",
+        return_value={"graph": None}
+    )
+    def test_get_workflows(self, show_workflow_mock, exported_workflow_mock):
+        with mock.patch.object(
+            bioblend.galaxy.workflows.WorkflowClient,
+            "get_workflows",
+            return_value=[{"id": self.GALAXY_ID_MOCK}]
+        ) as bioblend_get_workflows_mock:
+            workflows = get_workflows()
+        self.assertEqual(
+            workflows,
+            {
+                self.workflow_engine.uuid: [
+                    {
+                        "graph": "workflow_graph"
+                    }
+                ]
+            }
+        )
+
+        self.assertTrue(bioblend_get_workflows_mock.called)
+        self.assertTrue(show_workflow_mock.called)
+        self.assertTrue(exported_workflow_mock.called)
+
+    def test_get_workflows_with_connection_error(self):
+        with mock.patch.object(
+            bioblend.galaxy.workflows.WorkflowClient,
+            "get_workflows",
+            side_effect=bioblend.ConnectionError("Bad Connection")
+        ):
+            with self.assertRaises(RuntimeError) as context:
+                get_workflows()
+            self.assertIn(
+                "Unable to retrieve workflows from '{}'".format(
+                    self.workflow_engine.instance.base_url
+                ),
+                context.exception.message
+            )
